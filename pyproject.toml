@@ -29,7 +29,7 @@ urls.changelog = "https://github.com/psychopy/psychopy-whisper/blob/main/CHANGEL
 urls.documentation = "https://pages.github.com/psychopy/psychopy-whisper"
 urls.repository = "https://github.com/psychopy/psychopy-whisper"
 dependencies = [
-  "openai-whisper",
+  "faster-whisper",
   "librosa",
 ]
 
