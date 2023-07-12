@@ -15,7 +15,7 @@ import psychopy.logging as logging
 from psychopy.preferences import prefs
 from psychopy.sound.audioclip import AudioClip
 from psychopy.sound.transcribe import TranscriptionResult, BaseTranscriber
-import numpy as np
+import json
 
 
 class WhisperTranscriber(BaseTranscriber):
@@ -25,8 +25,8 @@ class WhisperTranscriber(BaseTranscriber):
     speech-to-text transcription in various languages. You must first download
     the model used for transcription on the local machine.
 
-    This interface uses `faster-whisper` for transcription, which is a faster 
-    version of the original `whisper` library provided by OpenAI.
+    This interface uses `faster-whisper` for transcription, which is a version 
+    of the original OpenAI `whisper` library that is optimized for speed.
 
     Parameters
     ----------
@@ -42,18 +42,37 @@ class WhisperTranscriber(BaseTranscriber):
 
         initConfig = {} if initConfig is None else initConfig
 
+        self.userModelDir = None  # directory for user models
         self._device = initConfig.get('device', 'auto')  # set the device
         self._modelName = initConfig.get('model_name', 'base.en')  # set the model
         self._computeType = initConfig.get('compute_type', 'int8')
 
         import faster_whisper
-        WhisperTranscriber.downloadModel(self._modelName)
+
+        # check if `modelName` is valid
+        if self._modelName not in WhisperTranscriber.getAllModels():
+            raise ValueError(
+                "Model `{}` is not available for download.".format(
+                self._modelName))
+
+        # set the directory for the model, create if it doesn't exist
+        userModelDir = os.path.join(
+            prefs.paths['userPrefsDir'], 'cache', 'whisper')
+        if not os.path.isdir(userModelDir):
+            logging.info(
+                "Creating directory for Whisper models: {}".format(
+                    userModelDir))
+            os.mkdir(userModelDir)
+
+        self.userModelDir = userModelDir
+        # self.userModelDir = WhisperTranscriber.downloadModel(self._modelName)
 
         # setup the model
         self._model = faster_whisper.WhisperModel(
             self._modelName, 
-            device=self._device, 
-            compute_type=self._computeType)
+            # device=self._device, 
+            # compute_type=self._computeType,
+            download_root=self.userModelDir)
 
     @property
     def device(self):
@@ -76,6 +95,11 @@ class WhisperTranscriber(BaseTranscriber):
         modelName : str
             Name of the model to download. You can get available models by 
             calling `getAllModels()`.
+
+        Returns
+        -------
+        str
+            Path to the directory containing the downloaded model.
 
         Notes
         -----
@@ -103,8 +127,10 @@ class WhisperTranscriber(BaseTranscriber):
         faster_whisper.download_model(
             modelName, 
             output_dir=userModelDir,
-            local_files_only=False  # avoid downloading if cached
+            local_files_only=False
         )
+
+        return userModelDir
 
     @staticmethod
     def getAllModels():
@@ -159,9 +185,19 @@ class WhisperTranscriber(BaseTranscriber):
             samples, sr = audioClip
 
         # whisper requires data to be a flat `float32` array
-        waveform = np.frombuffer(
-            samples, samples.dtype).flatten().astype(np.float32)
-        
+        # waveform = np.frombuffer(
+        #     samples, samples.dtype).flatten().astype(np.float32)
+
+        # remove excess channels for recording if not mono audio
+        if samples.ndim > 1:
+            logging.warning(
+                "Audio clip has more than one channel. Only the first channel "
+                "will be used for transcription.")
+            samples = samples[:, 0]
+
+        # waveform = _audio.pad_or_trim(waveform)
+        waveform = samples
+
         # resample if needed
         if int(sr) != 16000:
             import librosa
@@ -171,9 +207,6 @@ class WhisperTranscriber(BaseTranscriber):
                 target_sr=16000)
         
         # pad and trim the data as required
-        # import faster_whisper.audio as _audio
-        # waveform = _audio.pad_or_trim(waveform)
-
         modelConfig = {} if modelConfig is None else modelConfig
         decoderConfig = {} if decoderConfig is None else decoderConfig
 
@@ -189,32 +222,62 @@ class WhisperTranscriber(BaseTranscriber):
             temperature=temperature, 
             word_timestamps=word_timestamps,
             **decoderConfig)
-        results = list(segments)
+
+        segments = list(segments)  # expand generator
+
+        # compile words in all segments
+        text = []
+        for segment in segments:
+            text.append(segment.text)
+
+        # create a JSON string from the segments
+        dataStruct = {'segments': {}}  # initialize the data structure
+        for segment in segments:
+            wordDicts = {}
+            for i, word in enumerate(segment.words):
+                wordDicts[i] = {
+                    'word': (word.word).strip(),  # clear whitespace
+                    'start': word.start,
+                    'end': word.end,
+                    'probability': word.probability
+                }
+            dataStruct['segments'][segment.id] = {
+                'id': segment.id,  # enum for segment
+                'seek': segment.seek,  # pos in file
+                'start': segment.start,
+                'end': segment.end,
+                'text': (segment.text).strip(),
+                'tokens': segment.tokens,
+                'temperature': segment.temperature,
+                'avg_logprob': segment.avg_logprob,
+                'compression_ratio': segment.compression_ratio,
+                'no_speech_prob': segment.no_speech_prob,
+                'words': wordDicts
+            }
+
+        text = ' '.join(text).strip()  # remove excess whitespace
+        transcribed = text.split(' ')  # split words 
 
         # create the response value
+        toReturn = TranscriptionResult(
+            words=transcribed,
+            unknownValue=False,
+            requestFailed=False,
+            engine=self._engine,
+            language=language)
+        toReturn.response = json.dumps(dataStruct, indent=4)  # provide raw response
 
-        return results
+        self.lastResult = toReturn
         
-        # transcribed = result.get('text', '')
-        # transcribed = transcribed.split(' ')  # split words 
-        # language = result.get('langauge', '')
-
-        # # create the response value
-        # toReturn = TranscriptionResult(
-        #     words=transcribed,
-        #     unknownValue=False,
-        #     requestFailed=False,
-        #     engine=self._engine,
-        #     language=language)
-        # toReturn.response = str(result)  # provide raw JSON response
-
-        # self.lastResult = toReturn
-        
-        # return toReturn
+        return toReturn
 
 
 if __name__ == "__main__":
-    print(WhisperTranscriber.getAllModels())
-    transc = WhisperTranscriber({'model_name': 'tiny.en'})
-
-    # test transcription
+    # # test transcription
+    # import psychopy.sound as sound
+    # audioPath = 'tests_jfk.flac'
+    # audio = sound.AudioClip.load(audioPath)
+    # transc = WhisperTranscriber({'model_name': 'tiny.en'})
+    # result = transc.transcribe(audio)
+    # print(result.response)  # raw JSON output
+    pass
