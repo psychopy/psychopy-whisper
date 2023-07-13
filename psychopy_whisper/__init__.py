@@ -8,14 +8,18 @@
 """Speech-to-text transcription using OpenAI Whisper.
 """
 
+__all__ = [
+    "WhisperTranscriber",
+    "recognizeWhisper"
+]
 __version__ = '0.0.1'  # plugin version
 
 import os
+import json
 import psychopy.logging as logging
 from psychopy.preferences import prefs
 from psychopy.sound.audioclip import AudioClip
 from psychopy.sound.transcribe import TranscriptionResult, BaseTranscriber
-import json
 
 
 class WhisperTranscriber(BaseTranscriber):
@@ -195,16 +199,18 @@ class WhisperTranscriber(BaseTranscriber):
                 "will be used for transcription.")
             samples = samples[:, 0]
 
-        # waveform = _audio.pad_or_trim(waveform)
-        waveform = samples
+        # sample rate required by the recognizer
+        targetSampleRate = 16_000
 
         # resample if needed
-        if int(sr) != 16000:
+        if int(sr) != targetSampleRate:
             import librosa
             waveform = librosa.resample(
-                waveform, 
+                samples, 
                 orig_sr=sr, 
-                target_sr=16000)
+                target_sr=targetSampleRate)
+        else:
+            waveform = samples
         
         # pad and trim the data as required
         modelConfig = {} if modelConfig is None else modelConfig
@@ -213,7 +219,8 @@ class WhisperTranscriber(BaseTranscriber):
         # our defaults
         language = "en" if self._modelName.endswith(".en") else None
         temperature = modelConfig.get('temperature', 0.0)
-        word_timestamps = modelConfig.get('word_timestamps', True)
+        # timestamps, want this `True` in most cases
+        word_timestamps = modelConfig.get('word_timestamps', True)  
 
         # initiate the transcription
         segments, _ = self._model.transcribe(
@@ -265,11 +272,75 @@ class WhisperTranscriber(BaseTranscriber):
             requestFailed=False,
             engine=self._engine,
             language=language)
-        toReturn.response = json.dumps(dataStruct, indent=4)  # provide raw response
+        toReturn.response = json.dumps(
+            dataStruct, indent=4)  # provide raw response
 
         self.lastResult = toReturn
         
         return toReturn
+    
+
+_whisperTranscriber = None  # instance for the transcriber
+
+def recognizeWhisper(audioClip=None, language=None, expectedWords=None,
+                     config=None):
+    """Perform speech-to-text conversion on the provided audio samples locally 
+    using OpenAI Whisper.
+
+    This is a self-hosted (local) transcription engine. This means that the 
+    actual transcription is done on the host machine, without passing data over 
+    the network. 
+
+    Parameters
+    ----------
+    audioClip : :class:`~psychopy.sound.AudioClip` or None
+        Audio clip containing speech to transcribe (e.g., recorded from a
+        microphone). Specify `None` to initialize a client without performing a
+        transcription, this will reduce latency when the transcriber is invoked
+        in successive calls. Any arguments passed to `config` will be sent to
+        the initialization function of the model if `None`.
+    language : str or None
+        Language code (eg., 'en'). Unused for Whisper since models are 
+        multi-lingual, but may be used in the future. 
+    expectedWords : list or None
+        Not required by Whisper but kept here for compatibility.
+    config : dict or None
+        Additional configuration options for the specified engine. For Whisper,
+        the following configuration dictionary can be used 
+        `{'device': "auto", 'model_name': "base"}`. Values for `'device'` can be 
+        either `'cpu'`, `'gpu'` or `'auto'`, and `'model_name'` can be any value 
+        returned by `.getAllModels()`. 
+
+    Returns
+    -------
+    TranscriptionResult
+        Transcription result object.
+
+    """
+    global _whisperTranscriber
+
+    config = {} if config is None else config
+    onlyInitialize = audioClip is None
+    isInitialized = _whisperTranscriber is not None
+
+    if not isInitialized:
+        # initialization options
+        initConfig = {
+            'device': config.get('device', 'auto'), 
+            'model_name': config.get('model_name', 'tiny.en'),
+            'compute_type': config.get('compute_type', 'int8')
+        }
+        _whisperTranscriber = WhisperTranscriber(initConfig)
+
+    if onlyInitialize:  # only initialize
+        return None 
+    
+    # set parameters which we used to support
+    config['expectedWords'] = expectedWords
+    config['language'] = language
+    
+    # do transcription and return result
+    return _whisperTranscriber.transcribe(audioClip, modelConfig=config)
 
 
 if __name__ == "__main__":
@@ -277,7 +348,6 @@ if __name__ == "__main__":
     # import psychopy.sound as sound
     # audioPath = 'tests_jfk.flac'
     # audio = sound.AudioClip.load(audioPath)
-    # transc = WhisperTranscriber({'model_name': 'tiny.en'})
-    # result = transc.transcribe(audio)
+    # result = recognizeWhisper(audio)
     # print(result.response)  # raw JSON output
     pass
