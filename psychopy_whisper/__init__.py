@@ -12,7 +12,7 @@ __all__ = [
     "WhisperTranscriber",
     "recognizeWhisper"
 ]
-__version__ = '0.0.1'  # plugin version
+__version__ = '0.0.2'  # plugin version
 
 import os
 import json
