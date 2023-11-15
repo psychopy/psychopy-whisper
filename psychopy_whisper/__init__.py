@@ -170,6 +170,8 @@ class WhisperTranscriber(BaseTranscriber):
             Configuration options for the model.
         decoderConfig : dict or None
             Configuration options for the decoder.
+        config, expectedWords, language : 
+            These params are simply ignored - they are for compatibility only
 
         Returns
         -------
