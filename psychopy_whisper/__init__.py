@@ -155,7 +155,7 @@ class WhisperTranscriber(BaseTranscriber):
 
         return utils._MODELS
     
-    def transcribe(self, audioClip, modelConfig=None, decoderConfig=None):
+    def transcribe(self, audioClip, language=None, modelConfig=None, decoderConfig=None):
         """Perform a speech-to-text transcription of a voice recording.
 
         Parameters
