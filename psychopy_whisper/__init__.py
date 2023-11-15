@@ -155,7 +155,7 @@ class WhisperTranscriber(BaseTranscriber):
 
         return utils._MODELS
     
-    def transcribe(self, audioClip, language=None, modelConfig=None, decoderConfig=None):
+    def transcribe(self, audioClip, language=None, expectedWords=None, config=None, modelConfig=None, decoderConfig=None):
         """Perform a speech-to-text transcription of a voice recording.
 
         Parameters
@@ -213,7 +213,11 @@ class WhisperTranscriber(BaseTranscriber):
             waveform = samples
         
         # pad and trim the data as required
-        modelConfig = {} if modelConfig is None else modelConfig
+        if modelConfig is None:
+            if config is not None:
+                modelConfig = config
+            else:
+                modelConfig = {}
         decoderConfig = {} if decoderConfig is None else decoderConfig
 
         # our defaults
