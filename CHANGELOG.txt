@@ -1,0 +1,9 @@
+## Changelog for psychopy-whisper plugin
+
+# psychopy-whisper 0.0.3 (2023-11-15)
+
+- Added some ignored arguments to WhisperTranscriber.transcribe() to be in keeping with the base class (which was written for Sphinx and Google transcribers)
+
+# psychopy-whisper 0.0.1 (2023-07-13)
+
+First basic version 
