@@ -34,6 +34,19 @@ dependencies = [
   "typing-extensions",
 ]
 
+[project.optional-dependencies]
+# dependencies for building the docs
+docs = [
+  "psychopy",
+  "sphinx",
+  "furo",
+]
+# dependencies for running the test suite
+tests = [
+  "psychopy",
+  "pytest",
+]
+
 [tool.setuptools.packages.find]
 where = ["",]
 
