@@ -7,7 +7,7 @@ from psychopy.experiment.components.microphone import MicrophoneComponent
 
 
 # register whisper backend with MicrophoneComponent
-if hasattr(MicrophoneComponent.localTranscribers):
+if hasattr(MicrophoneComponent, "localTranscribers"):
     MicrophoneComponent.localTranscribers['OpenAI Whisper'] = "Whisper"
 else:
     # if PsychoPy version predates this attribute (<2024.2.0), there should be a global instead
