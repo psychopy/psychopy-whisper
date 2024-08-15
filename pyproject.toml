@@ -50,8 +50,5 @@ tests = [
 [tool.setuptools.packages.find]
 where = ["",]
 
-[project.entry-points."psychopy.sound.transcribe"]
-WhisperTranscriber = "psychopy_whisper:WhisperTranscriber"
-
 [project.entry-points."psychopy.experiment.components.microphone"]
 whisperBackend = "psychopy_whisper.components.whisperBackend"

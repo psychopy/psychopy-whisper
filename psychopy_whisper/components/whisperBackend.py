@@ -9,3 +9,5 @@ from psychopy.experiment.components.microphone import MicrophoneComponent
 # register whisper backend with MicrophoneComponent
 if hasattr(MicrophoneComponent, "localTranscribers"):
     MicrophoneComponent.localTranscribers['OpenAI Whisper'] = "Whisper"
+    if hasattr(MicrophoneComponent, "transcriberPaths"):
+        MicrophoneComponent.transcriberPaths['Whisper'] = "psychopy_whisper.transcribe:WhisperTranscriber"
