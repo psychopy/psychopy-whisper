@@ -8,7 +8,9 @@ Install this package with the following shell command::
 
     pip install psychopy-whisper
 
-You may also use PsychoPy's builtin package manager to install this package.
+For GPU support, you will need to install additional packages via `pip` into the PsychoPy environment, see 
+[here](https://pytorch.org/get-started/locally/) for more information and instructions. By default, the CPU version of 
+PyTorch is installed and should work on most computers.
 
 ## Usage
 

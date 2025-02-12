@@ -1,6 +1,8 @@
 import os
 import json
 import psychopy.logging as logging
+import numpy as np
+import time
 from psychopy.preferences import prefs
 from psychopy.sound.audioclip import AudioClip
 from psychopy.sound.transcribe import TranscriptionResult, BaseTranscriber
@@ -9,17 +11,29 @@ from psychopy.sound.transcribe import TranscriptionResult, BaseTranscriber
 class WhisperTranscriber(BaseTranscriber):
     """Class for speech-to-text transcription using OpenAI Whisper.
 
-    This class provides an interface for OpenAI Whisper for off-line (local) 
-    speech-to-text transcription in various languages. You must first download
-    the model used for transcription on the local machine.
+    This class provides an interface for OpenAI Whisper for offline (local) 
+    speech-to-text transcription in various languages.     
+    
+    You must first download the model used for transcription on the local 
+    machine. This can be done by calling `downloadModel(modelName)`. The
+    available models can be obtained by calling `getAllModels()`.
 
-    This interface uses `faster-whisper` for transcription, which is a version 
-    of the original OpenAI `whisper` library that is optimized for speed.
+    Transcription is computationally intensive and requires significant system 
+    memory and processing power. For optimal performance, it is recommended to 
+    enable GPU acceleration if available. By default, the transcriber will use
+    the GPU if available, otherwise it will use the CPU. You can specify the
+    device to use by setting the `device` option in the initialization
+    configuration. In order to use GPU acceleration, you must have a compatible 
+    GPU and the necessary drivers and packages installed.
 
     Parameters
     ----------
     initConfig : dict or None
         Options to configure the speech-to-text engine during initialization. 
+        If `None` default values are used. The following options are available:
+        `{'device': "auto", 'model_name': "tiny.en"}`. Values for `'device'`
+        can be either `'cpu'`, `'gpu'` or `'auto'`, and `'model_name'` can be
+        any value returned by `.getAllModels()`.
     
     """
     _isLocal = True
@@ -32,10 +46,24 @@ class WhisperTranscriber(BaseTranscriber):
 
         self.userModelDir = None  # directory for user models
         self._device = initConfig.get('device', 'auto')  # set the device
-        self._modelName = initConfig.get('model_name', 'base.en')  # set the model
-        self._computeType = initConfig.get('compute_type', 'int8')
+        self._modelName = initConfig.get('model_name', 'tiny.en')  # set the model
 
-        import faster_whisper
+        import torch
+        import whisper
+
+        if self._device == 'auto':
+            # prefer GPU if available
+            logging.info(
+                "Decoder device set to 'auto', checking for GPU availability.")
+            self._device = torch.cuda.is_available() and 'cuda' or 'cpu'
+
+            # inform the user of the choice
+            if self._device == 'cuda':
+                logging.info("Using CUDA enabled GPU for Whisper transcriber.")
+            else:
+                logging.info(
+                    "GPU support is not available on this system. Using CPU "
+                    "for Whisper transcriber.")
 
         # check if `modelName` is valid
         if self._modelName not in WhisperTranscriber.getAllModels():
@@ -53,14 +81,22 @@ class WhisperTranscriber(BaseTranscriber):
             os.mkdir(userModelDir)
 
         self.userModelDir = userModelDir
-        # self.userModelDir = WhisperTranscriber.downloadModel(self._modelName)
 
         # setup the model
-        self._model = faster_whisper.WhisperModel(
+        logging.info("Loading Whisper model: {}".format(self._modelName))
+
+        tStartLoad = time.time()  # profiling
+        self._model = whisper.load_model(
             self._modelName, 
-            # device=self._device, 
+            device=self._device, 
             # compute_type=self._computeType,
-            download_root=self.userModelDir)
+            download_root=self.userModelDir,  # downloads
+            in_memory=initConfig.get('in_memory', True))
+        tEndLoad = time.time()
+
+        logging.debug(
+            "Whisper model loaded in {:.2f} seconds.".format(
+                tEndLoad - tStartLoad))
 
     @property
     def device(self):
@@ -77,6 +113,9 @@ class WhisperTranscriber(BaseTranscriber):
     @staticmethod
     def downloadModel(modelName):
         """Download a model from the internet onto the local machine.
+
+        If the model is already downloaded, the function will return the path to
+        the model without downloading it again.
         
         Parameters
         ----------
@@ -87,7 +126,7 @@ class WhisperTranscriber(BaseTranscriber):
         Returns
         -------
         str
-            Path to the directory containing the downloaded model.
+            Path to the dowloaded model.
 
         Notes
         -----
@@ -95,7 +134,7 @@ class WhisperTranscriber(BaseTranscriber):
           installed on your system.
         
         """
-        import faster_whisper
+        import whisper
 
         # check if `modelName` is valid
         if modelName not in WhisperTranscriber.getAllModels():
@@ -111,14 +150,13 @@ class WhisperTranscriber(BaseTranscriber):
                     userModelDir))
             os.mkdir(userModelDir)
 
-        # download the model
-        faster_whisper.download_model(
-            modelName, 
-            output_dir=userModelDir,
-            local_files_only=False
-        )
+        # get the URL for the model
+        modelURL = whisper._MODELS[modelName]  # get the model URL
 
-        return userModelDir
+        # download the model
+        result = whisper._download(modelURL, userModelDir, in_memory=False)
+
+        return result
 
     @staticmethod
     def getAllModels():
@@ -135,11 +173,12 @@ class WhisperTranscriber(BaseTranscriber):
             Sequence of available models.
 
         """
-        from faster_whisper import utils
+        import whisper
 
-        return utils._MODELS
+        return whisper.available_models()
     
-    def transcribe(self, audioClip, language=None, expectedWords=None, config=None, modelConfig=None, decoderConfig=None):
+    def transcribe(self, audioClip, language=None, expectedWords=None, 
+                   config=None, modelConfig=None, decoderConfig=None):
         """Perform a speech-to-text transcription of a voice recording.
 
         Parameters
@@ -167,15 +206,26 @@ class WhisperTranscriber(BaseTranscriber):
 
         """
         if isinstance(audioClip, AudioClip):  # use raw samples from mic
+            # check if the audio clip needs to be resampled
+            if audioClip.sampleRateHz != 16_000:
+                logging.warning(
+                    "Audio clip sample rate is not 16KHz. Resampling to 16KHz.")
+                audioClip = audioClip.resample(16_000)
+
             samples = audioClip.samples
             sr = audioClip.sampleRateHz
         elif isinstance(audioClip, (list, tuple,)):
             samples, sr = audioClip
-
-        # whisper requires data to be a flat `float32` array
-        # waveform = np.frombuffer(
-        #     samples, samples.dtype).flatten().astype(np.float32)
-
+            if sr != 16_000:
+                logging.warning(
+                    "Audio clip sample rate is not 16KHz. Resampling to 16KHz.")
+                samples = AudioClip(samples, sr).resample(16_000).samples
+                sr = 16_000
+        else:
+            raise ValueError(
+                "Invalid audio clip provided. Must be an AudioClip or a tuple "
+                "containing audio samples and sample rate.")
+            
         # remove excess channels for recording if not mono audio
         if samples.ndim > 1:
             logging.warning(
@@ -183,19 +233,16 @@ class WhisperTranscriber(BaseTranscriber):
                 "will be used for transcription.")
             samples = samples[:, 0]
 
-        # sample rate required by the recognizer
-        targetSampleRate = 16_000
+        # format array as contiguous float32
+        waveform = np.ascontiguousarray(samples, dtype=np.float32)
+        duration = len(waveform) / sr
 
-        # resample if needed
-        if int(sr) != targetSampleRate:
-            import librosa
-            waveform = librosa.resample(
-                samples, 
-                orig_sr=sr, 
-                target_sr=targetSampleRate)
-        else:
-            waveform = samples
-        
+        # normalize the waveform between -1 and 1
+        if np.max(np.abs(waveform)) > 1.0:
+            logging.warning(
+                "Audio clip has values outside the range [-1, 1]. Normalizing.")
+            waveform /= np.max(np.abs(waveform))
+
         # pad and trim the data as required
         if modelConfig is None:
             if config is not None:
@@ -206,47 +253,62 @@ class WhisperTranscriber(BaseTranscriber):
 
         # our defaults
         language = "en" if self._modelName.endswith(".en") else None
+
+        # TODO - these should be set by `decoderConfig`, we'll correct this later
         temperature = modelConfig.get('temperature', 0.0)
         # timestamps, want this `True` in most cases
         word_timestamps = modelConfig.get('word_timestamps', True)  
 
+        import whisper
+
+        logging.debug(
+            "Starting transcription for {:.2f} seconds of audio.".format(
+                duration))
+
         # initiate the transcription
-        segments, _ = self._model.transcribe(
+        tStart = time.time()  # profiling
+        result = whisper.transcribe(
+            self._model,
             waveform, 
             language=language, 
             temperature=temperature, 
             word_timestamps=word_timestamps,
             **decoderConfig)
+        tEnd = time.time()
 
-        segments = list(segments)  # expand generator
+        logging.debug(
+            "Transcription completed in {:.2f} seconds.".format(tEnd - tStart))
+
+        # process the result from the transcriber
+        segments = list(result['segments'])  # expand generator
 
         # compile words in all segments
         text = []
         for segment in segments:
-            text.append(segment.text)
+            text.append(segment['text'])
 
         # create a JSON string from the segments
         dataStruct = {'segments': {}}  # initialize the data structure
         for segment in segments:
             wordDicts = {}
-            for i, word in enumerate(segment.words):
+            for i, word in enumerate(segment['words']):
                 wordDicts[i] = {
-                    'word': (word.word).strip(),  # clear whitespace
-                    'start': word.start,
-                    'end': word.end,
-                    'probability': word.probability
+                    'word': word['word'].strip(),  # clear whitespace
+                    'start': word['start'],
+                    'end': word['end'],
+                    'probability': word['probability']
                 }
-            dataStruct['segments'][segment.id] = {
-                'id': segment.id,  # enum for segment
-                'seek': segment.seek,  # pos in file
-                'start': segment.start,
-                'end': segment.end,
-                'text': (segment.text).strip(),
-                'tokens': segment.tokens,
-                'temperature': segment.temperature,
-                'avg_logprob': segment.avg_logprob,
-                'compression_ratio': segment.compression_ratio,
-                'no_speech_prob': segment.no_speech_prob,
+            dataStruct['segments'][segment['id']] = {
+                'id': segment['id'],  # enum for segment
+                'seek': segment['seek'],  # pos in file
+                'start': segment['start'],
+                'end': segment['end'],
+                'text': (segment['text']).strip(),
+                'tokens': segment['tokens'],
+                'temperature': segment['temperature'],
+                'avg_logprob': segment['avg_logprob'],
+                'compression_ratio': segment['compression_ratio'],
+                'no_speech_prob': segment['no_speech_prob'],
                 'words': wordDicts
             }
 
@@ -315,8 +377,8 @@ def recognizeWhisper(audioClip=None, language=None, expectedWords=None,
         # initialization options
         initConfig = {
             'device': config.get('device', 'auto'), 
-            'model_name': config.get('model_name', 'tiny.en'),
-            'compute_type': config.get('compute_type', 'int8')
+            'model_name': config.get('model_name', 'tiny.en')
+            # 'compute_type': config.get('compute_type', 'int8')
         }
         _whisperTranscriber = WhisperTranscriber(initConfig)
 
@@ -329,3 +391,7 @@ def recognizeWhisper(audioClip=None, language=None, expectedWords=None,
     
     # do transcription and return result
     return _whisperTranscriber.transcribe(audioClip, modelConfig=config)
+
+
+if __name__ == "__main__":
+    pass
