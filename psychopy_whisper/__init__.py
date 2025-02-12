@@ -14,5 +14,5 @@ __all__ = [
     "recognizeWhisper"
 ]
 
-__version__ = '0.0.2'  # plugin version
+__version__ = '0.0.6'  # plugin version
 
