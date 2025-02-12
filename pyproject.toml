@@ -29,8 +29,7 @@ urls.changelog = "https://github.com/psychopy/psychopy-whisper/blob/main/CHANGEL
 urls.documentation = "https://pages.github.com/psychopy/psychopy-whisper"
 urls.repository = "https://github.com/psychopy/psychopy-whisper"
 dependencies = [
-  "faster-whisper",
-  "librosa",
+  "openai-whisper",
   "typing-extensions",
 ]
 
@@ -52,3 +51,5 @@ where = ["",]
 
 [project.entry-points."psychopy.experiment.components.microphone"]
 whisperBackend = "psychopy_whisper.components.whisperBackend"
+[project.entry-points."psychopy.sound.transcribe"]
+whisperBackend = "psychopy_whisper.WhsiperTranscriber"
