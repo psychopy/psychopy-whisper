@@ -3,6 +3,7 @@
 # psychopy-whisper 0.0.6 (2025-02-12)
 
 - Use the `openai-whisper` package for transcription instead of `faster-whisper`
+- Added 'auto' device selection for torch for backwards compatibility
 
 # psychopy-whisper 0.0.3 (2023-11-15)
 
