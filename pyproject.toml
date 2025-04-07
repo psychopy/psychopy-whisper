@@ -52,4 +52,4 @@ where = ["",]
 [project.entry-points."psychopy.experiment.components.microphone"]
 whisperBackend = "psychopy_whisper.components.whisperBackend"
 [project.entry-points."psychopy.sound.transcribe"]
-whisperBackend = "psychopy_whisper.WhisperTranscriber"
+WhisperTranscriber = "psychopy_whisper.transcribe:WhisperTranscriber"
