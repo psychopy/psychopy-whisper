@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "psychopy-whisper"
-version = "0.0.6"
+version = "0.0.7"
 description = "Extension for transcription using OpenAI Whisper."
 readme = "README.md"
 requires-python = ">= 3.8"
@@ -52,4 +52,4 @@ where = ["",]
 [project.entry-points."psychopy.experiment.components.microphone"]
 whisperBackend = "psychopy_whisper.components.whisperBackend"
 [project.entry-points."psychopy.sound.transcribe"]
-whisperBackend = "psychopy_whisper.WhsiperTranscriber"
+whisperBackend = "psychopy_whisper.WhisperTranscriber"
