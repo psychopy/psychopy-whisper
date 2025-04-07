@@ -7,12 +7,13 @@
 
 """Speech-to-text transcription using OpenAI Whisper.
 """
-from .transcribe import WhisperTranscriber, recognizeWhisper
 
 __all__ = [
     "WhisperTranscriber",
     "recognizeWhisper"
 ]
+
+from .transcribe import WhisperTranscriber, recognizeWhisper
 
 __version__ = '0.0.7'  # plugin version
 
